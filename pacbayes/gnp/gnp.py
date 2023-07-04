@@ -37,12 +37,12 @@ class GNP(nn.Module):
         # Construct discretisations:
         self.disc_mean = Discretisation1d(
             points_per_unit=points_per_unit,
-            multiple=2 ** self.conv_mean.num_halving_layers,
+            multiple=2**self.conv_mean.num_halving_layers,
             margin=0.1,
         )
         self.disc_kernel = Discretisation1d(
             points_per_unit=points_per_unit,
-            multiple=2 ** self.conv_kernel.num_halving_layers,
+            multiple=2**self.conv_kernel.num_halving_layers,
             margin=0.1,
         )
 
@@ -82,7 +82,7 @@ class GNP(nn.Module):
         cov = self.decoder_kernel(xz, z, x_target)[1][:, 0, :, :]
 
         # Add observation noise.
-        with B.device(B.device(cov)):
+        with B.on_device(cov):
             cov = cov + B.eye(cov) * B.exp(self.log_sigma)
 
         return mean, cov

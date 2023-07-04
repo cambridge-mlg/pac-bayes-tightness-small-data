@@ -15,7 +15,8 @@ class SetConv1dDecoder(nn.Module):
 
     def forward(self, xz, z, x):
         # Compute interpolation weights.
-        dists2 = B.pw_dists2(x, xz[None, :])
+        assert B.rank(xz) == 1
+        dists2 = B.pw_dists2(x, xz[:, None])
         weights = B.exp(-0.5 * dists2 / B.exp(2 * self.log_scale))
 
         # Put feature channel last.
@@ -37,7 +38,8 @@ class SetConv2dDecoder(nn.Module):
 
     def forward(self, xz, z, x):
         # Compute interpolation weights.
-        dists2 = B.pw_dists2(x, xz[None, :])
+        assert B.rank(xz) == 1
+        dists2 = B.pw_dists2(x, xz[:, None])
         weights = B.exp(-0.5 * dists2 / B.exp(2 * self.log_scale))
         weights = weights[:, None, :, :]  # Insert channel dimension.
 

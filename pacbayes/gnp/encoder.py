@@ -2,7 +2,6 @@ import lab.torch as B
 import torch
 import torch.nn as nn
 
-
 __all__ = ["SetConv1dEncoder", "SetConv2dEncoder"]
 
 
@@ -16,14 +15,16 @@ class SetConv1dEncoder(nn.Module):
         self.discretisation = discretisation
 
     def forward(self, xz, z, x):
-        with B.device(B.device(z)):
+        with B.on_device(z):
             # Construct grid and density.
             x_grid = self.discretisation(xz, x)
 
             # Handle the case that the context set is empty.
             if B.shape(xz)[1] == 0:
                 # Return empty encoding.
-                return x_grid, B.zeros(B.dtype(z), B.shape(xz)[0], 2, B.shape(x_grid)[0])
+                return x_grid, B.zeros(
+                    B.dtype(z), B.shape(xz)[0], 2, B.shape(x_grid)[0]
+                )
 
             density_channel = B.ones(B.dtype(z), *B.shape(z)[:2], 1)
 
@@ -31,7 +32,7 @@ class SetConv1dEncoder(nn.Module):
         z = B.concat(density_channel, z, axis=2)
 
         # Compute interpolation weights.
-        dists2 = B.pw_dists2(x_grid[None, :], xz)
+        dists2 = B.pw_dists2(x_grid[:, None], xz)
         weights = B.exp(-0.5 * dists2 / B.exp(2 * self.log_scale))
 
         # Interpolate to grid.
@@ -56,7 +57,7 @@ class SetConv2dEncoder(nn.Module):
         self.discretisation = discretisation
 
     def forward(self, xz, z, x):
-        with B.device(B.device(z)):
+        with B.on_device(z):
             # Construct grid, density, identity channel.
             x_grid = self.discretisation(xz, x)
             identity_channel = B.eye(
@@ -91,7 +92,7 @@ class SetConv2dEncoder(nn.Module):
         z = B.transpose(z)[..., None]
 
         # Compute interpolation weights.
-        dists2 = B.pw_dists2(xz, x_grid[None, :])
+        dists2 = B.pw_dists2(xz, x_grid[:, None])
         weights = B.exp(-0.5 * dists2 / B.exp(2 * self.log_scale))
         weights = weights[:, None, :, :]  # Insert channel dimension.
 

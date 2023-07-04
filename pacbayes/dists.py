@@ -1,11 +1,13 @@
 import math
+
+import lab.torch as B
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
 from torch.distributions import MultivariateNormal
 from torch.distributions.kl import kl_divergence
+
 from .utils import device
-import lab.torch as B
 
 
 class Dist(nn.Module):
@@ -38,8 +40,9 @@ class Dist(nn.Module):
 
     def set_learnable(self):
         """Only for post optimisation."""
-        assert not self.is_network_parameter, "Network parameters are already " \
-                                           "learnable."
+        assert not self.is_network_parameter, (
+            "Network parameters are already " "learnable."
+        )
 
         for key, param in self.params.items():
             self.params[key] = Variable(param.detach(), requires_grad=True)
@@ -67,17 +70,16 @@ class FullCovGaussianFamily(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def instantiate_dist(self, feature_dim, batch_size=1,
-                         is_network_parameter=False):
+    def instantiate_dist(self, feature_dim, batch_size=1, is_network_parameter=False):
         mean_init = torch.zeros([batch_size, feature_dim]).to(device)
         num_chol_params = int(feature_dim * (feature_dim + 1) / 2)
         # chol_params can take any sign.
-        chol_params_init = 1e-2 * torch.randn(
-            [batch_size, num_chol_params]
-        ).to(device)
-        return Dist(means=mean_init,
-                    chol_params=chol_params_init,
-                    is_network_parameter=is_network_parameter)
+        chol_params_init = 1e-2 * torch.randn([batch_size, num_chol_params]).to(device)
+        return Dist(
+            means=mean_init,
+            chol_params=chol_params_init,
+            is_network_parameter=is_network_parameter,
+        )
 
     def num_param_dims(self, feature_dim):
         """Dimension of parameters of distribution in the mean-field Gaussian
@@ -99,8 +101,8 @@ class FullCovGaussianFamily(nn.Module):
         D = features.shape[-1]
 
         # Compute predictive mean and variance
-        post_means = post.params['means']  # [B, D]
-        post_chols = self.param_vector_to_chol(post.params['chol_params'])  # [B, D, D]
+        post_means = post.params["means"]  # [B, D]
+        post_chols = self.param_vector_to_chol(post.params["chol_params"])  # [B, D, D]
 
         post_means = post_means[..., None]  # [B, D, 1]
         pred_means = torch.matmul(features, post_means)  # [B, N, 1]
@@ -108,7 +110,7 @@ class FullCovGaussianFamily(nn.Module):
 
         # Sigma = LL^T, Var = (phi^T L)(L^T phi) = || phi^T L ||^2
         phi_T_chols = torch.matmul(features, post_chols)  # [B, N, D]
-        pred_vars = torch.sum(phi_T_chols ** 2, dim=2)  # [B, N]
+        pred_vars = torch.sum(phi_T_chols**2, dim=2)  # [B, N]
 
         pred_vars = torch.clamp(pred_vars, min=1e-6)
         return pred_means, pred_vars
@@ -122,14 +124,14 @@ class FullCovGaussianFamily(nn.Module):
         Returns:
             KLs: [B] torch, KL(Q || P).
         """
-        p_means = p.params['means']  # [B, D]
+        p_means = p.params["means"]  # [B, D]
         D = p_means.shape[1]
-        p_chols = self.param_vector_to_chol(p.params['chol_params'])  # [B, D, D]
+        p_chols = self.param_vector_to_chol(p.params["chol_params"])  # [B, D, D]
         normal_p = MultivariateNormal(loc=p_means, scale_tril=p_chols)
 
-        q_means = q.params['means']  # [B, D]
+        q_means = q.params["means"]  # [B, D]
         assert D == q_means.shape[1], "Need matching feature dims"
-        q_chols = self.param_vector_to_chol(q.params['chol_params'])  # [B, D, D]
+        q_chols = self.param_vector_to_chol(q.params["chol_params"])  # [B, D, D]
         normal_q = MultivariateNormal(loc=q_means, scale_tril=q_chols)
 
         return kl_divergence(normal_q, normal_p)  # [B]
@@ -184,7 +186,7 @@ class FullCovGaussianFamily(nn.Module):
         Returns:
             chols: [B, D, D] torch, Cholesky factors
         """
-        assert len(param_vectors.shape) == 2, 'Check for batch dimension'
+        assert len(param_vectors.shape) == 2, "Check for batch dimension"
 
         n_params = param_vectors.shape[-1]
         D = round((-1 + math.sqrt(1 + 8 * n_params)) / 2)
@@ -192,7 +194,7 @@ class FullCovGaussianFamily(nn.Module):
         diags = param_vectors[:, :D]  # [B, D]
         off_diags = param_vectors[:, D:]  # [B, D * (D - 1) / 2]
 
-        with B.device(str(device)):
+        with B.on_device(str(device)):
             chols = B.vec_to_tril(off_diags, offset=-1)  # [B, D, D]
 
         # Exponentiate diagonals
@@ -209,8 +211,8 @@ class FullCovGaussianFamily(nn.Module):
             param_vectors: [B, D * (D + 1) / 2] torch, Cholesky parameter
                 vectors. Values can take any sign.
         """
-        diags = torch.log(chols.diagonal(dim1=-2, dim2=-1)[:]) # [B, D]
-        with B.device(str(device)):
+        diags = torch.log(chols.diagonal(dim1=-2, dim2=-1)[:])  # [B, D]
+        with B.on_device(str(device)):
             off_diags = B.tril_to_vec(chols, offset=-1)  # [B, D * (D - 1) / 2]
 
         return torch.cat([diags, off_diags], dim=-1)
@@ -220,12 +222,12 @@ class MeanFieldGaussianFamily(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def instantiate_dist(self, feature_dim, batch_size=1,
-                         is_network_parameter=False):
+    def instantiate_dist(self, feature_dim, batch_size=1, is_network_parameter=False):
         mean_init = torch.zeros([batch_size, feature_dim]).to(device)
         var_init = torch.ones_like(mean_init)
-        return Dist(means=mean_init, vars=var_init,
-                    is_network_parameter=is_network_parameter)
+        return Dist(
+            means=mean_init, vars=var_init, is_network_parameter=is_network_parameter
+        )
 
     def num_param_dims(self, feature_dim):
         """Dimension of parameters of distribution in the mean-field Gaussian
@@ -246,15 +248,15 @@ class MeanFieldGaussianFamily(nn.Module):
         features = feature_map(x)  # [B, N, feature_dim]
 
         # Compute predictive mean and variance
-        post_means = post.params['means']
-        post_vars = post.params['vars']
+        post_means = post.params["means"]
+        post_vars = post.params["vars"]
 
         post_means = post_means[..., None]  # [B, feature_dim, 1]
         pred_means = torch.matmul(features, post_means)  # [B, N, 1]
         pred_means = pred_means[..., 0]  # [B, N]
 
         post_vars = post_vars[..., None]  # [B, feature_dim, 1]
-        pred_vars = torch.matmul(features ** 2, post_vars)  # [B, N, 1]
+        pred_vars = torch.matmul(features**2, post_vars)  # [B, N, 1]
         pred_vars = pred_vars[..., 0]  # [B, N]
 
         pred_vars = torch.clamp(pred_vars, min=1e-6)
@@ -269,14 +271,14 @@ class MeanFieldGaussianFamily(nn.Module):
         Returns:
             KLs: [B] torch, KL(Q || P).
         """
-        p_means = p.params['means']
-        p_vars = p.params['vars']
-        q_means = q.params['means']
-        q_vars = q.params['vars']
+        p_means = p.params["means"]
+        p_vars = p.params["vars"]
+        q_means = q.params["means"]
+        q_vars = q.params["vars"]
 
         log_term = torch.log(p_vars) - torch.log(q_vars)
         quad_term = (q_vars + (q_means - p_means) ** 2) / p_vars
-        return 0.5 * torch.sum(log_term + quad_term - 1., dim=-1)
+        return 0.5 * torch.sum(log_term + quad_term - 1.0, dim=-1)
 
     def param_vector_to_dist(self, param_vector, feature_dim):
         """
